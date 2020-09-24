@@ -155,7 +155,7 @@ class AppBlocker {
     return await _channel.invokeMethod('updateBlockedPackages', packages);
   }
 
-  Future<List<String>> getBlockedPackages(String packageName) async {
+  Future<List<String>> getBlockedPackages() async {
     return await _channel.invokeListMethod('getBlockedPackages');
   }
 
