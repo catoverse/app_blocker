@@ -1,14 +1,20 @@
 package club.cato.app_blocker.service
 
+import android.app.ActivityManager
+import android.app.ActivityManager.RunningAppProcessInfo
+import android.app.KeyguardManager
 import android.app.Service
 import android.content.*
 import android.os.IBinder
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import club.cato.app_blocker.AppBlockerPlugin
 import club.cato.app_blocker.service.notification.ServiceNotificationManager
 import club.cato.app_blocker.service.observable.AppForegroundObservable
 import club.cato.app_blocker.service.observable.PermissionCheckerObservable
+import club.cato.app_blocker.service.utils.BlockManager
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry.PluginRegistrantCallback
 import io.flutter.view.FlutterCallbackInformation
@@ -62,11 +68,11 @@ class AppBlockerService : Service() {
         // If background isolate is not running start it.
 
         // If background isolate is not running start it.
-//        if (!isIsolateRunning.get()) {
-//            val p = backgroundContext.getSharedPreferences(SHARED_PREFERENCES_KEY, 0)
-//            val callbackHandle = p.getLong(BACKGROUND_SETUP_CALLBACK_HANDLE_KEY, 0)
-//            startBackgroundIsolate(backgroundContext, callbackHandle)
-//        }
+        if (!isIsolateRunning.get()) {
+            val p = backgroundContext.getSharedPreferences(SHARED_PREFERENCES_KEY, 0)
+            val callbackHandle: Long = p.getLong(BACKGROUND_SETUP_CALLBACK_HANDLE_KEY, 0)
+            startBackgroundIsolate(backgroundContext, callbackHandle)
+        }
 
         permissionCheckerObservable = PermissionCheckerObservable(applicationContext)
         appForegroundObservable = AppForegroundObservable(applicationContext)
@@ -84,12 +90,12 @@ class AppBlockerService : Service() {
     }
 
     override fun onDestroy() {
-        ServiceStarter.startService(applicationContext)
         unregisterScreenReceiver()
         unregisterInstallUninstallReceiver()
         if (allDisposables.isDisposed.not()) {
             allDisposables.dispose()
         }
+        ServiceStarter.startService(applicationContext)
         super.onDestroy()
     }
 
@@ -128,8 +134,8 @@ class AppBlockerService : Service() {
             .subscribeOn(Schedulers.io())
             .observeOn(AndroidSchedulers.mainThread())
             .subscribe(
-                { foregroundAppPackage -> onAppForeground(backgroundContext, foregroundAppPackage) },
-                { error ->  Log.e("AppBlocker", error.message, error)})
+                    { foregroundAppPackage -> onAppForeground(backgroundContext, foregroundAppPackage) },
+                    { error -> Log.e("AppBlocker", error.message, error) })
         allDisposables.add(foregroundAppDisposable!!)
     }
 
@@ -141,20 +147,20 @@ class AppBlockerService : Service() {
 
     private fun observePermissionChecker() {
         allDisposables.add(permissionCheckerObservable
-            .get()
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe { isPermissionNeed ->
-                if (isPermissionNeed) {
-                    showPermissionNeedNotification()
-                } else {
-                    serviceNotificationManager.hidePermissionNotification()
-                }
-            })
+                .get()
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe { isPermissionNeed ->
+                    if (isPermissionNeed) {
+                        showPermissionNeedNotification()
+                    } else {
+                        serviceNotificationManager.hidePermissionNotification()
+                    }
+                })
     }
 
     private fun initializeAppLockerNotification() {
-        AppBlockerPlugin.getLauncherIntentFromAppContext(applicationContext)?.let {  intent ->
+        AppBlockerPlugin.getLauncherIntentFromAppContext(applicationContext)?.let { intent ->
             val notification = serviceNotificationManager.createNotification(intent)
             NotificationManagerCompat.from(applicationContext)
                     .notify(NOTIFICATION_ID_APPLOCKER_SERVICE, notification)
@@ -179,58 +185,67 @@ class AppBlockerService : Service() {
         private const val SHARED_PREFERENCES_KEY = "club.cato.appblocker_background"
         private const val BACKGROUND_SETUP_CALLBACK_HANDLE_KEY = "background_setup_callback"
         private const val BACKGROUND_MESSAGE_CALLBACK_HANDLE_KEY = "background_message_callback"
-        private var backgroundMessageHandle: Long? = null
-        private var backgroundFlutterView: FlutterNativeView? = null
-        private var backgroundChannel: MethodChannel? = null
-        private lateinit var backgroundContext: Context
+
         private var isIsolateRunning: AtomicBoolean = AtomicBoolean(false)
+        /** Background Dart execution context. **/
+        private var backgroundFlutterView: FlutterNativeView? = null
+
+        private var backgroundChannel: MethodChannel? = null
+        private var backgroundMessageHandle: Long? = null
+
         private var pluginRegistrantCallback: PluginRegistrantCallback? = null
         const val TAG = "AppBlocker"
 
-        private val blockedApps = listOf("com.facebook.katana", "com.google.android.youtube", "com.instagram.android")
+        private lateinit var backgroundContext: Context
 
         private fun onAppForeground(context: Context, foregroundAppPackage: String) {
             Log.d("🙏", "Service intercepted foreground call $foregroundAppPackage")
 
-            // TODO: Update this logic
-            if(foregroundAppPackage !in blockedApps) {
-                return
-            }
+            val isBlocked = BlockManager.isBlocked(context, foregroundAppPackage);
 
-            AppBlockerPlugin.getLauncherIntentFromAppContext(context)?.let { intent ->
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-                context.startActivity(intent)
-            }
+            if(!isBlocked) return
 
+            if(isApplicationRunning(context)) {
+                // resume the app
+                val intent = Intent(AppBlockerPlugin.APP_BLOCKED_EVENT)
+                intent.putExtra(AppBlockerPlugin.APP_BLOCKED_VALUE, foregroundAppPackage)
+                LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
+            } else {
+                // start the app
+                AppBlockerPlugin.getLauncherIntentFromAppContext(context)?.let { intent ->
+                    intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                    context.startActivity(intent)
+                }
+            }
         }
 
 
 
-//        fun startBackgroundIsolate(context: Context?, callbackHandle: Long) {
-//            FlutterMain.ensureInitializationComplete(context!!, null)
-//            val appBundlePath: String? = FlutterMain.findAppBundlePath()
-//            val flutterCallback: FlutterCallbackInformation? = FlutterCallbackInformation.lookupCallbackInformation(callbackHandle)
-//            if (flutterCallback == null) {
-//                Log.e(TAG, "Fatal: failed to find callback")
-//                return
-//            }
-//
-//            // Note that we're passing `true` as the second argument to our
-//            // FlutterNativeView constructor. This specifies the FlutterNativeView
-//            // as a background view and does not create a drawing surface.
-//            backgroundFlutterView = FlutterNativeView(context, true)
-//            if (appBundlePath != null) {
-//                if (pluginRegistrantCallback == null) {
-//                    throw RuntimeException("PluginRegistrantCallback is not set.")
-//                }
-//                val args = FlutterRunArguments()
-//                args.bundlePath = appBundlePath
-//                args.entrypoint = flutterCallback.callbackName
-//                args.libraryPath = flutterCallback.callbackLibraryPath
-//                backgroundFlutterView?.runFromBundle(args)
-//                pluginRegistrantCallback?.registerWith(backgroundFlutterView?.pluginRegistry)
-//            }
-//        }
+        fun startBackgroundIsolate(context: Context?, callbackHandle: Long) {
+            FlutterMain.ensureInitializationComplete(context!!, null)
+            val appBundlePath: String? = FlutterMain.findAppBundlePath()
+            val flutterCallback: FlutterCallbackInformation? = FlutterCallbackInformation.lookupCallbackInformation(callbackHandle)
+            if (flutterCallback == null) {
+                Log.e(TAG, "Fatal: failed to find callback")
+                return
+            }
+
+            // Note that we're passing `true` as the second argument to our
+            // FlutterNativeView constructor. This specifies the FlutterNativeView
+            // as a background view and does not create a drawing surface.
+            backgroundFlutterView = FlutterNativeView(context, true)
+            if (appBundlePath != null) {
+                if (pluginRegistrantCallback == null) {
+                    throw RuntimeException("PluginRegistrantCallback is not set.")
+                }
+                val args = FlutterRunArguments()
+                args.bundlePath = appBundlePath
+                args.entrypoint = flutterCallback.callbackName
+                args.libraryPath = flutterCallback.callbackLibraryPath
+                backgroundFlutterView?.runFromBundle(args)
+                pluginRegistrantCallback?.registerWith(backgroundFlutterView?.pluginRegistry)
+            }
+        }
 
         /**
          * Acknowledge that background message handling on the Dart side is ready. This is called by the
@@ -310,5 +325,26 @@ class AppBlockerService : Service() {
             pluginRegistrantCallback = callback
         }
 
+        private fun isApplicationRunning(context: Context): Boolean {
+            val keyguardManager = context.getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+            if (keyguardManager.isKeyguardLocked) {
+                return false
+            }
+            val myPid: Int = Process.myPid()
+            val activityManager = context.getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            var list: List<RunningAppProcessInfo>
+            if (activityManager.runningAppProcesses.also { list = it } != null) {
+                for (aList in list) {
+                    if(aList.pid == myPid) {
+                        return true
+                    }
+                    /*var info: RunningAppProcessInfo
+                    if (aList.also { info = it }.pid == myPid) {
+                        return info.importance == RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                    }*/
+                }
+            }
+            return false
+        }
     }
 }

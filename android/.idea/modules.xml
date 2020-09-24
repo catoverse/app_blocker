@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/app_blocker.iml" filepath="$PROJECT_DIR$/.idea/modules/app_blocker.iml" group="app_blocker" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/club.cato.app_blocker-app_blocker.iml" filepath="$PROJECT_DIR$/.idea/modules/club.cato.app_blocker-app_blocker.iml" group="app_blocker" />
     </modules>
   </component>
 </project>

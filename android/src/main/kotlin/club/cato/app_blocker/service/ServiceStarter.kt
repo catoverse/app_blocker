@@ -12,12 +12,8 @@ import java.lang.Exception
 object ServiceStarter {
 
     fun startService(context: Context) {
-        Log.d("🙏", "ServiceStarting")
 
         if(!PrefManager.isAppBlockerEnabled(context)) return
-
-        Log.d("🙏", "Service Check Passed")
-
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             ContextCompat.startForegroundService(context, Intent(context, AppBlockerService::class.java))

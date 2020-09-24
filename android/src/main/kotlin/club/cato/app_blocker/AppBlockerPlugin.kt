@@ -1,11 +1,13 @@
 package club.cato.app_blocker
 
 import android.app.Activity
-import android.content.ContentValues.TAG
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.util.Log
 import androidx.annotation.NonNull
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import club.cato.app_blocker.service.AppBlockerService
 import club.cato.app_blocker.service.ServiceStarter
 import club.cato.app_blocker.service.utils.PrefManager
@@ -23,7 +25,7 @@ import io.flutter.plugin.common.PluginRegistry.Registrar
 
 
 /** AppBlockerPlugin */
-class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.NewIntentListener {
+class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, ActivityAware, PluginRegistry.NewIntentListener {
   /// The MethodChannel that will the communication between Flutter and native Android
   ///
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
@@ -40,6 +42,11 @@ class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginR
     val backgroundCallbackChannel = MethodChannel(binaryMessenger, "club.cato/app_blocker_background")
     backgroundCallbackChannel.setMethodCallHandler(this)
     AppBlockerService.setBackgroundChannel(backgroundCallbackChannel)
+
+    val intentFilter = IntentFilter()
+    intentFilter.addAction(APP_BLOCKED_EVENT)
+    val manager = LocalBroadcastManager.getInstance(applicationContext)
+    manager.registerReceiver(this, intentFilter)
   }
 
   override fun onAttachedToEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
@@ -47,7 +54,8 @@ class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginR
   }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-
+    // unregister any resource held here like LocalBroadcastReceiver
+    LocalBroadcastManager.getInstance(binding.applicationContext).unregisterReceiver(this)
   }
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
@@ -70,53 +78,83 @@ class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginR
 
 
   override fun onMethodCall(@NonNull call: MethodCall, @NonNull result: Result) {
+    if("AppBlockerService#start" == call.method) {
+      var setupCallbackHandle: Long = 0
+      var backgroundMessageHandle: Long = 0;
+      try {
+        val callbacks = call.arguments as Map<String, Long>
+        setupCallbackHandle = callbacks["setupHandle"] ?: 0
+        backgroundMessageHandle = callbacks["backgroundHandle"] ?: 0
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
+      AppBlockerService.setBackgroundSetupHandle(mainActivity!!, setupCallbackHandle)
+      AppBlockerService.startBackgroundIsolate(mainActivity!!, setupCallbackHandle)
+      AppBlockerService.setBackgroundMessageHandle(mainActivity!!, backgroundMessageHandle)
+      result.success(true)
 
-    /*  Even when the app is not active the `FirebaseMessagingService` extended by
-     *  `FlutterFirebaseMessagingService` allows incoming FCM messages to be handled.
-     *
-     *  `FcmDartService#start` and `FcmDartService#initialized` are the two methods used
-     *  to optionally setup handling messages received while the app is not active.
-     *
-     *  `FcmDartService#start` sets up the plumbing that allows messages received while
-     *  the app is not active to be handled by a background isolate.
-     *
-     *  `FcmDartService#initialized` is called by the Dart side when the plumbing for
-     *  background message handling is complete.
-     */
-    if("enableAppBlocker" == call.method) {
+    } else if("AppBlockerService#initialized" == call.method) {
+      AppBlockerService.onInitialized()
+      result.success(true)
+    } else if("configure" == call.method) {
+      // Start services
+      ServiceStarter.startService(applicationContext)
+      WorkerStarter.startServiceCheckerWorker()
+      result.success(true)
+    }else if("enableAppBlocker" == call.method) {
       result.success(enableAppBlocker())
+    } else if("disableAppBlocker" == call.method) {
+      result.success(disableAppBlocker())
+    } else if("setTime" == call.method) {
+      val startTime = call.argument<String>("starTime")
+      val endTime = call.argument<String>("endTime")
+      if(startTime == null || endTime == null) {
+        result.success(false);
+      } else {
+        result.success(setRestrictionTime(startTime, endTime))
+      }
+    } else if("setWeekDays" == call.method) {
+      try {
+        val weekdays = call.arguments as List<String>
+        result.success(setRestrictionWeekDays(weekdays))
+      } catch (e: Exception) {
+        result.success(false)
+      }
+    } else if("updateBlockedPackages" == call.method) {
+      try {
+        val packages = call.arguments as List<String>
+        result.success(updateBlockedPackages(packages))
+      } catch (e: Exception) {
+        result.success(false)
+      }
+    } else if("getBlockedPackages" == call.method) {
+      result.success(getBlockedPackages())
     } else {
       result.notImplemented()
     }
   }
 
+  override fun onReceive(context: Context, intent: Intent) {
+    val action = intent.action ?: return
+
+    sendMessageFromIntent("onResume", intent)
+  }
+
   override fun onNewIntent(intent: Intent): Boolean {
-    return true
-//    val res: Boolean = sendMessageFromIntent("onResume", intent)
-//    if (res && mainActivity != null) {
-//      mainActivity!!.intent = intent
-//    }
-//    return res
+    val res: Boolean = sendMessageFromIntent("onResume", intent)
+    if (res && mainActivity != null) {
+      mainActivity!!.intent = intent
+    }
+    return res
   }
 
   private fun sendMessageFromIntent(method: String, intent: Intent): Boolean {
-//    if (CLICK_ACTION_VALUE.equals(intent.action)
-//            || CLICK_ACTION_VALUE.equals(intent.getStringExtra("click_action"))) {
-//      val message: MutableMap<String, Any> = HashMap()
-//      val extras = intent.extras ?: return false
-//      val notificationMap: Map<String, Any> = HashMap()
-//      val dataMap: MutableMap<String, Any> = HashMap()
-//      for (key in extras.keySet()) {
-//        val extra = extras[key]
-//        if (extra != null) {
-//          dataMap[key] = extra
-//        }
-//      }
-//      message["notification"] = notificationMap
-//      message["data"] = dataMap
-//      channel.invokeMethod(method, message)
-//      return true
-//    }
+    if (APP_BLOCKED_EVENT.equals(intent.action)
+            || APP_BLOCKED_EVENT.equals(intent.getStringExtra("app_blocked_event"))) {
+      val blockedAppPackage = intent.extras?.getString(APP_BLOCKED_VALUE) ?: return false
+      channel.invokeMethod(method, blockedAppPackage)
+      return true
+    }
     return false
   }
 
@@ -129,7 +167,6 @@ class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginR
   }
 
   private fun enableAppBlocker(): Boolean {
-    Log.d("🙏", "Enabling AppBlocker")
     if(!::applicationContext.isInitialized) return false
     Log.d("🙏", "AppBlocker State Passed")
     PrefManager.setAppBlockEnabled(applicationContext, true)
@@ -138,24 +175,36 @@ class AppBlockerPlugin: FlutterPlugin, MethodCallHandler, ActivityAware, PluginR
     return true
   }
 
-  private fun blockUnBlockApp(packageName: String, shouldBlock: Boolean = true): Boolean {
+  private fun setRestrictionTime(startTime: String, endTime: String): Boolean {
     if(!::applicationContext.isInitialized) return false
-
-    if(shouldBlock) {
-      PrefManager.blockPackage(applicationContext, packageName)
-    } else {
-      PrefManager.unBlockPackage(applicationContext, packageName)
-    }
+    PrefManager.setRestrictionTime(applicationContext, startTime, endTime)
     return true
   }
 
-  private fun getAllBlockApps(): MutableSet<String>? {
-    if(!::applicationContext.isInitialized) return null
-    return PrefManager.getAllBlackListedPackages(applicationContext)
+  private fun setRestrictionWeekDays(weekDays: List<String>): Boolean {
+    if(!::applicationContext.isInitialized) return false
+    PrefManager.setRestrictionWeekDays(applicationContext, weekDays)
+    return true
+  }
+
+  private fun updateBlockedPackages(packages: List<String>): Boolean {
+    if(!::applicationContext.isInitialized) return false
+
+    PrefManager.updateBlockedPackages(applicationContext, packages)
+    return true
+  }
+
+  private fun getBlockedPackages(): List<String> {
+    if(!::applicationContext.isInitialized) return listOf()
+    return PrefManager.getAllBlackListedPackages(applicationContext).toList()
   }
 
 
   companion object {
+
+    const val APP_BLOCKED_EVENT = "app_blocked_event"
+    const val APP_BLOCKED_VALUE = "app_blocked_package"
+
     @JvmStatic
     fun registerWith(registrar: Registrar) {
       val instance = AppBlockerPlugin()
