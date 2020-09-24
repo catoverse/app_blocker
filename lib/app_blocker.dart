@@ -162,4 +162,20 @@ class AppBlocker {
   void bringAppToFront() {
     _channel.invokeMethod("bringAppToForeground");
   }
+
+  Future<bool> isAppUsagePermissionGranted() async {
+    return await _channel.invokeMethod("isAppUsagePermissionGranted");
+  }
+
+  void openAppUsageSettings() {
+    _channel.invokeMethod("openAppUsageSettings");
+  }
+
+  Future<bool> isBatteryOptimizationIgnored() async {
+    return await _channel.invokeMethod("isBatteryOptimizationBypass");
+  }
+  
+  void openBatteryOptimizationSettings() {
+    _channel.invokeMethod("openBatteryOptimization");
+  }
 }

@@ -5,11 +5,15 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.annotation.NonNull
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import club.cato.app_blocker.service.AppBlockerService
 import club.cato.app_blocker.service.ServiceStarter
+import club.cato.app_blocker.service.utils.PermissionChecker
 import club.cato.app_blocker.service.utils.PrefManager
 import club.cato.app_blocker.service.worker.WorkerStarter
 import io.flutter.embedding.engine.plugins.FlutterPlugin
@@ -133,7 +137,35 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
         it.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         applicationContext.startActivity(it)
       }
-    } else {
+      result.success(null)
+    } else if("isAppUsagePermissionGranted" == call.method) {
+      result.success(PermissionChecker.checkUsageAccessPermission(applicationContext))
+    } else if ("openAppUsageSettings" == call.method) {
+      val intent = Intent()
+      intent.action = Settings.ACTION_USAGE_ACCESS_SETTINGS
+      try {
+        mainActivity?.startActivity(intent)
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
+      result.success(null)
+    } else if("isBatteryOptimizationBypass" == call.method) {
+      result.success(PermissionChecker.checkBatteryOptimizationPermission(applicationContext))
+    } else if("openBatteryOptimization" == call.method) {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        result.success(null)
+        return
+      }
+      val intent = Intent()
+      intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+      intent.data = Uri.fromParts("package", applicationContext.packageName, null)
+      try {
+        mainActivity?.startActivity(intent)
+      } catch (e: Exception) {
+        e.printStackTrace()
+      }
+      result.success(null)
+    }else {
       result.notImplemented()
     }
   }

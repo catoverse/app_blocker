@@ -68,12 +68,17 @@ class _MyAppState extends State<MyApp> {
         body: Center(
           child: FloatingActionButton(
             onPressed: () async {
-              await _appBlocker.updateBlockedPackages(["com.facebook.katana"]);
-              bool isBlocked = await _appBlocker.enableAppBlocker();
-
-              setState(() {
-                title = "AppBlocker isBlocked = $isBlocked";
-              });
+              var isGranted = await _appBlocker.isAppUsagePermissionGranted();
+              var isOptimizationBypassed = await _appBlocker.isBatteryOptimizationIgnored();
+              print('App usage permission is granted = $isGranted');
+              print('Battery optimization bypassed = $isOptimizationBypassed');
+              _appBlocker.openBatteryOptimizationSettings();
+              // await _appBlocker.updateBlockedPackages(["com.facebook.katana"]);
+              // bool isBlocked = await _appBlocker.enableAppBlocker();
+              //
+              // setState(() {
+              //   title = "AppBlocker isBlocked = $isBlocked";
+              // });
             },
 
           ),

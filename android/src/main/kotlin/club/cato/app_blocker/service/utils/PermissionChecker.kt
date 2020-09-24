@@ -4,7 +4,9 @@ import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.PackageManager.NameNotFoundException
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
+import java.lang.Exception
 
 object PermissionChecker {
 
@@ -29,5 +31,15 @@ object PermissionChecker {
             false
         }
 
+    }
+
+    fun checkBatteryOptimizationPermission(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        return try {
+            val manager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            manager.isIgnoringBatteryOptimizations(context.packageName)
+        } catch (e: Exception) {
+            false
+        }
     }
 }
