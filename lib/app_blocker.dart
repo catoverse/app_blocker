@@ -4,6 +4,8 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+typedef Future<dynamic> MessageHandler(String message);
+
 void _appBlockerSetupBackgroundChannel(
     {MethodChannel backgroundChannel =
         const MethodChannel(AppBlocker.APP_CHANNEL_BACKGROUND)}) async {
@@ -97,7 +99,10 @@ class AppBlocker {
   Future<dynamic> _handleMethod(MethodCall call) async {
     switch (call.method) {
       case 'onResume':
-        return _onResume(call.arguments.cast<String>());
+        {
+          print("onResume called with args ${call.arguments.toString()}");
+          return _onResume(call.arguments.toString());
+        }
 
       default:
         throw UnsupportedError('Unrecognized JSON message');
@@ -152,5 +157,9 @@ class AppBlocker {
 
   Future<List<String>> getBlockedPackages(String packageName) async {
     return await _channel.invokeListMethod('getBlockedPackages');
+  }
+
+  void bringAppToFront() {
+    _channel.invokeMethod("bringAppToForeground");
   }
 }

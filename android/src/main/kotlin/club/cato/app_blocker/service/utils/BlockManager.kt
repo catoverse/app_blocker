@@ -2,6 +2,7 @@ package club.cato.app_blocker.service.utils
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -27,12 +28,17 @@ object BlockManager {
         }
         
         val isBlockedPackage = blockedAppsList?.contains(packageName) == true
-        if(!isBlockedPackage) return false
+        if(!isBlockedPackage) {
+//            Log.d("🙏", "App Is not blocked $blockedAppsList")
+            return false
+        }
         
         return isRestrictedTime() && isRestrictedWeekDay()
     }
     
     private fun isRestrictedWeekDay(): Boolean {
+        if(restrictedWeekdays.isNullOrEmpty()) return true
+        
         val calendar = Calendar.getInstance()
         val currentDay = calendar.get(Calendar.DAY_OF_WEEK)
         return restrictedWeekdays?.contains(currentDay) == true

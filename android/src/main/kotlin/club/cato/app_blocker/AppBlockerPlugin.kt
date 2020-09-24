@@ -32,7 +32,6 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
   /// when the Flutter Engine is detached from the Activity
   private lateinit var channel : MethodChannel
   private lateinit var applicationContext: Context
-  private var mainActivity: Activity? = null
 
   private fun onAttachedToEngine(context: Context, binaryMessenger: BinaryMessenger) {
     applicationContext = context
@@ -98,8 +97,7 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
       result.success(true)
     } else if("configure" == call.method) {
       // Start services
-      ServiceStarter.startService(applicationContext)
-      WorkerStarter.startServiceCheckerWorker()
+      restartAppBlocker()
       result.success(true)
     }else if("enableAppBlocker" == call.method) {
       result.success(enableAppBlocker())
@@ -129,14 +127,19 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
       }
     } else if("getBlockedPackages" == call.method) {
       result.success(getBlockedPackages())
+    } else if("bringAppToForeground" == call.method) {
+      val intent = getLauncherIntentFromAppContext(applicationContext)
+      intent?.let {
+        it.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        applicationContext.startActivity(it)
+      }
     } else {
       result.notImplemented()
     }
   }
 
   override fun onReceive(context: Context, intent: Intent) {
-    val action = intent.action ?: return
-
+//    Log.d("🙏", "message captured")
     sendMessageFromIntent("onResume", intent)
   }
 
@@ -153,8 +156,10 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
             || APP_BLOCKED_EVENT.equals(intent.getStringExtra("app_blocked_event"))) {
       val blockedAppPackage = intent.extras?.getString(APP_BLOCKED_VALUE) ?: return false
       channel.invokeMethod(method, blockedAppPackage)
+//      Log.d("🙏", "captured message sent")
       return true
     }
+//    Log.d("🙏", "captured message failed")
     return false
   }
 
@@ -168,7 +173,7 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
 
   private fun enableAppBlocker(): Boolean {
     if(!::applicationContext.isInitialized) return false
-    Log.d("🙏", "AppBlocker State Passed")
+//    Log.d("🙏", "AppBlocker State Passed")
     PrefManager.setAppBlockEnabled(applicationContext, true)
     ServiceStarter.startService(applicationContext)
     WorkerStarter.startServiceCheckerWorker()
@@ -178,12 +183,14 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
   private fun setRestrictionTime(startTime: String, endTime: String): Boolean {
     if(!::applicationContext.isInitialized) return false
     PrefManager.setRestrictionTime(applicationContext, startTime, endTime)
+    restartAppBlocker()
     return true
   }
 
   private fun setRestrictionWeekDays(weekDays: List<String>): Boolean {
     if(!::applicationContext.isInitialized) return false
     PrefManager.setRestrictionWeekDays(applicationContext, weekDays)
+    restartAppBlocker()
     return true
   }
 
@@ -191,6 +198,7 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
     if(!::applicationContext.isInitialized) return false
 
     PrefManager.updateBlockedPackages(applicationContext, packages)
+    restartAppBlocker()
     return true
   }
 
@@ -199,16 +207,24 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
     return PrefManager.getAllBlackListedPackages(applicationContext).toList()
   }
 
+  private fun restartAppBlocker() {
+    // close first
+    ServiceStarter.stopService(applicationContext)
+    WorkerStarter.stopServiceCheckerWorker()
+    ServiceStarter.startService(applicationContext)
+    WorkerStarter.startServiceCheckerWorker()
+  }
 
   companion object {
 
     const val APP_BLOCKED_EVENT = "app_blocked_event"
     const val APP_BLOCKED_VALUE = "app_blocked_package"
+    var mainActivity: Activity? = null
 
     @JvmStatic
     fun registerWith(registrar: Registrar) {
       val instance = AppBlockerPlugin()
-      instance.mainActivity = registrar.activity()
+      mainActivity = registrar.activity()
       registrar.addNewIntentListener(instance)
       instance.onAttachedToEngine(registrar.context(), registrar.messenger())
     }

@@ -8,6 +8,14 @@ void main() {
   runApp(MyApp());
 }
 
+class SecondRoute extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container();
+  }
+}
+
+
 class MyApp extends StatefulWidget {
   @override
   _MyAppState createState() => _MyAppState();
@@ -15,10 +23,18 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   String title = 'Unknown state';
+  AppBlocker _appBlocker = AppBlocker();
 
   @override
   void initState() {
     super.initState();
+    _appBlocker.configure(
+      onResume: (String packageName) async {
+        print("onResume: $packageName");
+        _appBlocker.bringAppToFront();
+      },
+      onBackgroundMessage: null
+    );
 //    initPlatformState();
   }
 
@@ -52,7 +68,9 @@ class _MyAppState extends State<MyApp> {
         body: Center(
           child: FloatingActionButton(
             onPressed: () async {
-              bool isBlocked = await AppBlocker.enableAppBlocker();
+              await _appBlocker.updateBlockedPackages(["com.facebook.katana"]);
+              bool isBlocked = await _appBlocker.enableAppBlocker();
+
               setState(() {
                 title = "AppBlocker isBlocked = $isBlocked";
               });

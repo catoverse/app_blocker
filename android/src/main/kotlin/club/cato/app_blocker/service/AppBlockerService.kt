@@ -199,18 +199,23 @@ class AppBlockerService : Service() {
         private lateinit var backgroundContext: Context
 
         private fun onAppForeground(context: Context, foregroundAppPackage: String) {
-            Log.d("🙏", "Service intercepted foreground call $foregroundAppPackage")
+//            Log.d("🙏", "Service intercepted foreground call $foregroundAppPackage")
 
             val isBlocked = BlockManager.isBlocked(context, foregroundAppPackage);
 
             if(!isBlocked) return
+            
+//            Log.d("🙏", "App Is Blocked")
 
             if(isApplicationRunning(context)) {
+//                Log.d("🙏", "broadcasting message")
                 // resume the app
                 val intent = Intent(AppBlockerPlugin.APP_BLOCKED_EVENT)
                 intent.putExtra(AppBlockerPlugin.APP_BLOCKED_VALUE, foregroundAppPackage)
                 LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
             } else {
+//                Log.d("🙏", "opening app")
+
                 // start the app
                 AppBlockerPlugin.getLauncherIntentFromAppContext(context)?.let { intent ->
                     intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -330,21 +335,21 @@ class AppBlockerService : Service() {
             if (keyguardManager.isKeyguardLocked) {
                 return false
             }
-            val myPid: Int = Process.myPid()
-            val activityManager = context.getSystemService(ACTIVITY_SERVICE) as ActivityManager
-            var list: List<RunningAppProcessInfo>
-            if (activityManager.runningAppProcesses.also { list = it } != null) {
-                for (aList in list) {
-                    if(aList.pid == myPid) {
-                        return true
-                    }
-                    /*var info: RunningAppProcessInfo
-                    if (aList.also { info = it }.pid == myPid) {
-                        return info.importance == RunningAppProcessInfo.IMPORTANCE_FOREGROUND
-                    }*/
-                }
-            }
-            return false
+
+            return AppBlockerPlugin.mainActivity != null
+//            val myPid: Int = Process.myPid()
+//            val activityManager = context.getSystemService(ACTIVITY_SERVICE) as ActivityManager
+//            var list: List<RunningAppProcessInfo>
+//            if (activityManager.runningAppProcesses.also { list = it } != null) {
+//                for (aList in list) {
+//                    var info: RunningAppProcessInfo
+//                    if (aList.also { info = it }.pid == myPid) {
+//                        Log.d("🙏", "App state is ${info.importance}")
+//                        return info.importance == RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+//                    }
+//                }
+//            }
+//            return false
         }
     }
 }

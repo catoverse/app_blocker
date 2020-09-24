@@ -17,8 +17,8 @@ class ServiceNotificationManager constructor(val context: Context) {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID_APPLOCKER_SERVICE)
                 .setSmallIcon(R.drawable.notification_icon)
-                .setContentTitle("Productivity 10x")
-                .setContentText("by guarding you")
+                .setContentTitle("guarding your time")
+//                .setContentText("by guarding you")
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(resultPendingIntent)
                 .build()
