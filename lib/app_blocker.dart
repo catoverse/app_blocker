@@ -6,45 +6,38 @@ import 'package:flutter/widgets.dart';
 
 typedef Future<dynamic> MessageHandler(String message);
 
-void _appBlockerSetupBackgroundChannel(
-    {MethodChannel backgroundChannel =
-        const MethodChannel(AppBlocker.APP_CHANNEL_BACKGROUND)}) async {
-// Setup Flutter state needed for MethodChannels.
-  WidgetsFlutterBinding.ensureInitialized();
 
-// This is where the magic happens and we handle background events from the
-// native portion of the plugin.
-  backgroundChannel.setMethodCallHandler((MethodCall call) async {
-    if (call.method == 'handleBackgroundMessage') {
-      final CallbackHandle handle =
-          CallbackHandle.fromRawHandle(call.arguments['handle']);
-      final Function handlerFunction =
-          PluginUtilities.getCallbackFromHandle(handle);
-      try {
-        await handlerFunction(call.arguments['appPackage']);
-      } catch (e) {
-        print('Unable to handle incoming background message.');
-        print(e);
-      }
-      return Future<void>.value();
-    }
-  });
-
-// Once we've finished initializing, let the native portion of the plugin
-// know that it can start scheduling handling messages.
-  backgroundChannel.invokeMethod<void>('AppBlockerService#initialized');
-}
-
-enum WEEKDAYS {
-  NONE,
-  SUNDAY,
-  MONDAY,
-  TUESDAY,
-  WEDNESDAY,
-  THURSDAY,
-  FRIDAY,
-  SATURDAY
-}
+// TODO: Currently we are not making any background channel for
+// message passing when the app is not actively running process.
+// Instead we open the app forcefully directly.
+// void _appBlockerSetupBackgroundChannel(
+//     {MethodChannel backgroundChannel =
+//         const MethodChannel(AppBlocker.APP_CHANNEL_BACKGROUND)}) async {
+// // Setup Flutter state needed for MethodChannels.
+//   WidgetsFlutterBinding.ensureInitialized();
+//
+// // This is where the magic happens and we handle background events from the
+// // native portion of the plugin.
+//   backgroundChannel.setMethodCallHandler((MethodCall call) async {
+//     if (call.method == 'handleBackgroundMessage') {
+//       final CallbackHandle handle =
+//           CallbackHandle.fromRawHandle(call.arguments['handle']);
+//       final Function handlerFunction =
+//           PluginUtilities.getCallbackFromHandle(handle);
+//       try {
+//         await handlerFunction(call.arguments['appPackage']);
+//       } catch (e) {
+//         print('Unable to handle incoming background message.');
+//         print(e);
+//       }
+//       return Future<void>.value();
+//     }
+//   });
+//
+// // Once we've finished initializing, let the native portion of the plugin
+// // know that it can start scheduling handling messages.
+//   backgroundChannel.invokeMethod<void>('AppBlockerService#initialized');
+// }
 
 class AppBlocker {
   static const APP_CHANNEL = 'club.cato/app_blocker';
@@ -61,7 +54,7 @@ class AppBlocker {
   final MethodChannel _channel;
 
   MessageHandler _onResume;
-  MessageHandler _onBackgroundMessage;
+  //MessageHandler _onBackgroundMessage;
 
   void configure({
     MessageHandler onResume,
@@ -72,41 +65,46 @@ class AppBlocker {
     _channel.setMethodCallHandler(_handleMethod);
     _channel.invokeMethod<void>('configure');
 
-    if (onBackgroundMessage != null) {
-      _onBackgroundMessage = onBackgroundMessage;
-      final CallbackHandle backgroundSetupHandle =
-          PluginUtilities.getCallbackHandle(_appBlockerSetupBackgroundChannel);
-
-      final CallbackHandle backgroundMessageHandle =
-          PluginUtilities.getCallbackHandle(_onBackgroundMessage);
-
-      if (backgroundMessageHandle == null) {
-        throw ArgumentError('''
-          Failed to setup background message handler!
-          ''');
-      }
-
-      _channel.invokeMethod<bool>(
-        'AppBlockerService#start',
-        <String, dynamic>{
-          'setupHandle': backgroundSetupHandle.toRawHandle(),
-          'backgroundHandle': backgroundMessageHandle.toRawHandle()
-        },
-      );
-    }
+    // TODO: Doesn't need background message handling for now
+    // if (onBackgroundMessage != null) {
+    //   _onBackgroundMessage = onBackgroundMessage;
+    //   final CallbackHandle backgroundSetupHandle =
+    //       PluginUtilities.getCallbackHandle(_appBlockerSetupBackgroundChannel);
+    //
+    //   final CallbackHandle backgroundMessageHandle =
+    //       PluginUtilities.getCallbackHandle(_onBackgroundMessage);
+    //
+    //   if (backgroundMessageHandle == null) {
+    //     throw ArgumentError('''
+    //       Failed to setup background message handler!
+    //       ''');
+    //   }
+    //
+    //   _channel.invokeMethod<bool>(
+    //     'AppBlockerService#start',
+    //     <String, dynamic>{
+    //       'setupHandle': backgroundSetupHandle.toRawHandle(),
+    //       'backgroundHandle': backgroundMessageHandle.toRawHandle()
+    //     },
+    //   );
+    // }
   }
 
   Future<dynamic> _handleMethod(MethodCall call) async {
     switch (call.method) {
       case 'onResume':
         {
-          print("onResume called with args ${call.arguments.toString()}");
           return _onResume(call.arguments.toString());
         }
 
       default:
         throw UnsupportedError('Unrecognized JSON message');
     }
+  }
+
+  /// Return AppBlocker state
+  Future<bool> isEnabled() async {
+    return await _channel.invokeMethod('isEnabled');
   }
 
   /// Enables the appBlocker to block the apps
@@ -136,13 +134,23 @@ class AppBlocker {
     return await setRestrictionTime('-1', '-1');
   }
 
+  /// Returns the map containing startTime and endTime for the restriction time period.
+  Future<Map<String, String>> getRestrictionTime() async {
+    return await _channel.invokeMapMethod('getTime');
+  }
+
   /// Set the weekdays when you want to appBlocker to block apps.
-  Future<bool> setRestrictionWeekDays(List<WEEKDAYS> weekDays) async {
-    List<String> weekDaysInt = weekDays.map((e) => e.index.toString()).toList();
+  Future<bool> setRestrictionWeekDays(List<int> weekDays) async {
+    List<String> weekDaysInt = weekDays.map((e) => e.toString()).toList();
     return await _channel.invokeMethod('setWeekDays', weekDaysInt);
   }
 
-  /// Resets the weekdays to be restricted to restrict without weekdays
+  /// Returns the list of restricted week days for the plugin.
+  Future<List<int>> getRestrictedWeekDays() async {
+    return await _channel.invokeListMethod('getWeekDays');
+  }
+
+  /// Resets the weekdays to be restricted
   Future<bool> resetRestrictionWeekDays() async {
     return await setRestrictionWeekDays(List());
   }
@@ -155,27 +163,53 @@ class AppBlocker {
     return await _channel.invokeMethod('updateBlockedPackages', packages);
   }
 
+  /// Returns the list of blocked packages
   Future<List<String>> getBlockedPackages() async {
-    return await _channel.invokeListMethod('getBlockedPackages');
+    List<String> packages =  await _channel.invokeListMethod('getBlockedPackages');
+    return List()..addAll(packages);
   }
 
+  /// Call this method to make sure the app can be bring to front if in the recent
+  /// tasks list of the phone.
+  ///
+  /// You should call this method on onResume handler of `configure` method when
+  /// you configure the library from the app.
   void bringAppToFront() {
     _channel.invokeMethod("bringAppToForeground");
   }
 
+  /// Returns Future bool whether or not the app usage permission is granted or not
   Future<bool> isAppUsagePermissionGranted() async {
     return await _channel.invokeMethod("isAppUsagePermissionGranted");
   }
 
+  /// Launch intent for the app usage permission screen for our app.
   void openAppUsageSettings() {
     _channel.invokeMethod("openAppUsageSettings");
   }
 
+  /// Returns Future bool whether the battery optimization for our app
+  /// is ignored or not.
   Future<bool> isBatteryOptimizationIgnored() async {
     return await _channel.invokeMethod("isBatteryOptimizationBypass");
   }
-  
+
+  /// Opens Battery Optimization Popup/Screen which helps to run
+  /// the app background service for longer.
   void openBatteryOptimizationSettings() {
     _channel.invokeMethod("openBatteryOptimization");
+  }
+
+  /// Returns Future bool whether the overlay permission is granted or not
+  ///
+  /// The overlay permission is required in API 30 and above in order to open
+  /// activity from background.
+  Future<bool> isOverlayPermissionGranted() async {
+    return await _channel.invokeMethod("isOverlayPermissionGranted");
+  }
+
+  /// Method to request for the overlay permission
+  void requestOverlayPermission() {
+    _channel.invokeMethod("requestOverlayPermission");
   }
 }

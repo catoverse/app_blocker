@@ -108,13 +108,19 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
     } else if("disableAppBlocker" == call.method) {
       result.success(disableAppBlocker())
     } else if("setTime" == call.method) {
-      val startTime = call.argument<String>("starTime")
+      val startTime = call.argument<String>("startTime")
       val endTime = call.argument<String>("endTime")
       if(startTime == null || endTime == null) {
         result.success(false);
       } else {
         result.success(setRestrictionTime(startTime, endTime))
       }
+    } else if("getTime" == call.method) {
+      val time = PrefManager.getRestrictionTime(applicationContext);
+      result.success(mapOf(
+        "startTime" to time.first,
+        "endTime" to time.second
+      ))
     } else if("setWeekDays" == call.method) {
       try {
         val weekdays = call.arguments as List<String>
@@ -122,6 +128,10 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
       } catch (e: Exception) {
         result.success(false)
       }
+    } else if("getWeekDays" == call.method) {
+        val weekDays = PrefManager.getRestrictionWeekDays(applicationContext).map { e -> try { e.toInt() } catch (ex: Exception) { -1 } }.toMutableList()
+        weekDays.removeAll { e -> e == -1 }
+        result.success(weekDays)
     } else if("updateBlockedPackages" == call.method) {
       try {
         val packages = call.arguments as List<String>
@@ -165,7 +175,28 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
         e.printStackTrace()
       }
       result.success(null)
-    }else {
+    } else if("isEnabled" == call.method) {
+      result.success(PrefManager.isAppBlockerEnabled(applicationContext));
+    } else if("isOverlayPermissionGranted" == call.method) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        result.success(Settings.canDrawOverlays(applicationContext))
+      } else {
+        result.success(true)
+      }
+    } else if("requestOverlayPermission" == call.method) {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        val intent = Intent()
+        intent.action = Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+        if(Build.VERSION.SDK_INT < 30) {
+          intent.data = Uri.fromParts("package", applicationContext.packageName, null)
+        }
+        try {
+          mainActivity?.startActivity(intent)
+        } catch (e: Exception) {
+          e.printStackTrace()
+        }
+      }
+    } else {
       result.notImplemented()
     }
   }
@@ -188,10 +219,8 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
             || APP_BLOCKED_EVENT.equals(intent.getStringExtra("app_blocked_event"))) {
       val blockedAppPackage = intent.extras?.getString(APP_BLOCKED_VALUE) ?: return false
       channel.invokeMethod(method, blockedAppPackage)
-//      Log.d("🙏", "captured message sent")
       return true
     }
-//    Log.d("🙏", "captured message failed")
     return false
   }
 
@@ -205,7 +234,6 @@ class AppBlockerPlugin: BroadcastReceiver(), MethodCallHandler, FlutterPlugin, A
 
   private fun enableAppBlocker(): Boolean {
     if(!::applicationContext.isInitialized) return false
-//    Log.d("🙏", "AppBlocker State Passed")
     PrefManager.setAppBlockEnabled(applicationContext, true)
     ServiceStarter.startService(applicationContext)
     WorkerStarter.startServiceCheckerWorker()
